@@ -42,6 +42,7 @@ public class TempGenerator {
         List<String> exports = new LinkedList<>();
         List<String> opens = new LinkedList<>();
         List<String> provides = new LinkedList<>();
+        String moduleNameExtention = "_client";
 
         desc.requires().stream().forEach((ModuleDescriptor.Requires req) -> requires.add(req.name()));
         desc.exports().stream().forEach((ModuleDescriptor.Exports exp)-> exports.add(((exp.isQualified()) ? exp.source()+" to" + exp.targets(): exp.source())));
@@ -49,13 +50,14 @@ public class TempGenerator {
 
         //Füge export für das Server Module inzu, wird benötigt, dass ZMQServer auf die ServiceImpl Klasse zugreifen kann
         if(!exportPackageName.equals("")){
-            exports.add(exportPackageName + " to " + "proxygen");
+            exports.add(exportPackageName + " to " + "libmodule");
+            moduleNameExtention = "_server";
         }
 
         //Ob CLient oder Server benötigen beide Module das proxygen Modul um auf die Helper zuzugreifen
-        requires.add("proxygen");
+        requires.add("libmodule");
 
-        root.put("moduleName",desc.name());
+        root.put("moduleName",desc.name()+moduleNameExtention);
         root.put("requires",requires);
         root.put("exports", exports);
         root.put("provides", provides);
@@ -69,6 +71,28 @@ public class TempGenerator {
 
 
         try(Writer osw = new OutputStreamWriter(new FileOutputStream(moduleFile))){
+            temp.process(root,osw);
+        }catch (TemplateException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+
+    }
+
+    public void skript(String fileDest) throws IOException {
+        Map<String,Object> root = new HashMap<>();
+        List<String> modules = new LinkedList<>();
+        modules.add("service.a");
+        modules.add("service.b");
+        root.put("modules", modules);
+
+        Template temp = cfg.getTemplate("compile.ftl");
+
+        File compileFile = new File(fileDest+"skript.sh");
+
+        try(Writer osw = new OutputStreamWriter(new FileOutputStream(compileFile))){
             temp.process(root,osw);
         }catch (TemplateException e) {
             e.printStackTrace();

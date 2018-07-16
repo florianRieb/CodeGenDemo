@@ -10,11 +10,10 @@
     <modules>
         <module>service.api</module>
         <module>service.a</module>
-        <module>generator</module>
         <module>service.b</module>
         <module>app</module>
-        <module>netty</module>
         <module>proxygen</module>
+        <module>libmodule</module>
 
     </modules>
     <packaging>pom</packaging>

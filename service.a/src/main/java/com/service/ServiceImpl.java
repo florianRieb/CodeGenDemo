@@ -11,7 +11,7 @@ public class ServiceImpl implements CalcService  {
         private static Logger LOGGER= LogManager.getLogManager().getLogger("");
 
         @Override
-        public double calc(double[] numbers) {
+        public double calc(double[] numbers) throws Exception{
             LOGGER.info("ServiceA Got numbers and calc sum");
             double sum = 0;
             for(double n:numbers){

@@ -39,15 +39,18 @@ public class Generator {
         Method method = serviceClass.getDeclaredMethods()[0];
 
 
-       MethodSpec main = MethodSpec.methodBuilder("Main")
+       MethodSpec main = MethodSpec.methodBuilder("main")
                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
                .returns(void.class)
                .addParameter(String[].class, "args")
                .addStatement("$T<$T,$T> serv = new $T($S,$S)"
                        , ZMQServer.class,method.getParameterTypes()[0],getWrapper(method.getReturnType()),ZMQServer.class,
                        serviceClass.getName(), serviceClass.getModule().getName())
-               .addStatement("$T executor = new $T.newFixedThreadPool($L)", ExecutorService.class, Executors.class,2)
+               .addStatement("$T executor = $T.newFixedThreadPool($L)", ExecutorService.class, Executors.class,2)
                .addStatement("executor.submit(serv)")
+               .addException(ClassNotFoundException.class)
+               .addException(IllegalAccessException.class)
+               .addException(InstantiationException.class)
                .build();
 
        // ZMQServer<double[],Double> server = new ZMQServer<>("com.serviceB.ServiceImpl","servicea");
