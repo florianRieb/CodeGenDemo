@@ -9,10 +9,7 @@ import freemarker.template.TemplateExceptionHandler;
 import java.io.*;
 import java.lang.module.ModuleDescriptor;
 import java.nio.file.Path;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 public class TempGenerator {
 
@@ -50,8 +47,9 @@ public class TempGenerator {
 
         //Füge export für das Server Module inzu, wird benötigt, dass ZMQServer auf die ServiceImpl Klasse zugreifen kann
         if(!exportPackageName.equals("")){
-            exports.add(exportPackageName + " to " + "libmodule");
             moduleNameExtention = "_server";
+            if(!exports.contains(exportPackageName))
+                exports.add(exportPackageName + " to " + "libmodule");
         }
 
         //Ob CLient oder Server benötigen beide Module das proxygen Modul um auf die Helper zuzugreifen
@@ -81,16 +79,17 @@ public class TempGenerator {
 
     }
 
-    public void skript(String fileDest) throws IOException {
+    public void skript(String projectDir, Set<String> mods) throws IOException {
         Map<String,Object> root = new HashMap<>();
         List<String> modules = new LinkedList<>();
-        modules.add("service.a");
-        modules.add("service.b");
+        modules.addAll(mods);
+
         root.put("modules", modules);
+        root.put("projDir",projectDir);
 
         Template temp = cfg.getTemplate("compile.ftl");
 
-        File compileFile = new File(fileDest+"skript.sh");
+        File compileFile = new File(projectDir + File.separator + "generatedFiles" + File.separator +"skript.sh");
 
         try(Writer osw = new OutputStreamWriter(new FileOutputStream(compileFile))){
             temp.process(root,osw);

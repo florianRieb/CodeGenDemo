@@ -1,6 +1,7 @@
 package com.main;
 
 import api.CalcService;
+import api.SayHelloService;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -22,11 +23,16 @@ public class Main {
     List<Double> numbers = new ArrayList<>(Arrays.asList(55.5, 100.0, 44.0));
     double[] numberArray = {55.5, 100.0, 44.0};
 
-
+    ServiceLoader<SayHelloService> helloServices = ServiceLoader.load(SayHelloService.class);
     ServiceLoader<CalcService> services = ServiceLoader.load(CalcService.class);
         if(!services.iterator().hasNext()){
-            throw new RuntimeException("No Service providers found");
+            throw new RuntimeException("No Calc-Service providers found");
         }
+        if(!helloServices.iterator().hasNext()){
+            throw new RuntimeException("No Hello-Service providers found");
+        }
+
+        helloServices.iterator().next().sayHello("Main App");
 
         while (!Thread.currentThread().isInterrupted()){
             for(CalcService service:services){

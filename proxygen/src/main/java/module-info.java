@@ -4,5 +4,5 @@ module proxygen {
     requires java.compiler;
     requires libmodule;
     requires java.logging;
-
+    requires java.desktop;
 }

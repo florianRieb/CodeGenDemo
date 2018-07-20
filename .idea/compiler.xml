@@ -12,6 +12,7 @@
         <module name="service.a" />
         <module name="service.api" />
         <module name="service.b" />
+        <module name="servicec" />
       </profile>
     </annotationProcessing>
     <bytecodeTargetLevel>
@@ -19,5 +20,10 @@
       <module name="generator" target="10" />
       <module name="netty" target="10" />
     </bytecodeTargetLevel>
+  </component>
+  <component name="JavacSettings">
+    <option name="ADDITIONAL_OPTIONS_OVERRIDE">
+      <module name="proxygen" options="" />
+    </option>
   </component>
 </project>

@@ -98,7 +98,7 @@ public class Generator {
                 .addAnnotation(Override.class)
                 .addStatement("$T<$T> client = new $T<>($S)", ProxyClient.class,genType ,ProxyClient.class,moduleName)
                 .addStatement("return client.send(arg0)")
-                .addExceptions(exceptions)
+                .addExceptions(exceptions) // from interface
                 .build();
 
     }
@@ -138,21 +138,33 @@ public class Generator {
 
 
     private Class getWrapper(Class primitiv){
-        switch(primitiv.getSimpleName()){
-            case "double": return Double.class;
+        if(primitiv.isPrimitive() ){
+            switch (primitiv.getSimpleName()) {
+                case "double":
+                    return Double.class;
 
-            case "int": return Integer.class;
+                case "int":
+                    return Integer.class;
 
-            case "char": return Character.class;
+                case "char":
+                    return Character.class;
 
-            case "float": return Float.class;
+                case "float":
+                    return Float.class;
 
-            case "boolean": return Boolean.class;
+                case "boolean":
+                    return Boolean.class;
 
-            case "long": return Long.class;
+                case "long":
+                    return Long.class;
 
-            default: return null;
+                default:
+                    return null;
             }
+        }
+        else {
+            return primitiv;
+        }
     }
 
 

@@ -9,9 +9,11 @@ import org.zeromq.ZMsg;
 
 import java.io.*;
 import java.nio.channels.Selector;
+import java.util.logging.Logger;
 
 
 public class ProxyClient<R> {
+    final static Logger LOGGER = Logger.getLogger(ProxyClient.class.getName());
     private final static int REQUEST_TIMEOUT = 2500;    //  msecs, (> 1000!)
     private final static int REQUEST_RETRIES = 3;       //  Before we abandon
     private static String SERVER_ENDPOINT;
@@ -40,9 +42,10 @@ public class ProxyClient<R> {
     }
 
 
-    public R send(Object obj) throws Exception {
+    public R send(Object obj)  {
         if(!(obj instanceof Serializable))
-            throw new Exception("Object not implements Serializable");
+            LOGGER.severe("Object " +obj.toString() + " cant be used for communication, it don't implements the <Serializable> interface");
+
 
         //Serialisierung  des Obj und senden der Msg
         try {
