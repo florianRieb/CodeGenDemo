@@ -1,0 +1,4 @@
+[ {
+  "baseModule" : "service.a",
+  "module2Isolate" : "app"
+} ]

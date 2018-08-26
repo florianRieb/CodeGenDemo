@@ -1,5 +1,4 @@
 module ${moduleName} {
-
 <#list requires as req>
 requires ${req};
 </#list>
@@ -11,5 +10,4 @@ exports ${ex};
 <#list provides as prov>
 provides ${prov};
 </#list>
-
 }

@@ -9,15 +9,18 @@ import javax.lang.model.element.Modifier;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.nio.file.Paths;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.*;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class Generator {
 
     public void genClientClass(String moduleName, Class providerClass, String desDir){
-        Method[] methods = providerClass.getDeclaredMethods();
+        //Method[] methods = providerClass.getDeclaredMethods();
+
+        Method[] methods = providerClass.getInterfaces()[0].getDeclaredMethods();
+
         Set<MethodSpec> proxyMethodSet = new HashSet<>();
 
         MethodSpec[] proxyMethods = new MethodSpec[methods.length];
@@ -34,29 +37,37 @@ public class Generator {
 
     }
 
-    public void genServerClass( Class serviceClass,String desDir){
-
-        Method method = serviceClass.getDeclaredMethods()[0];
 
 
-       MethodSpec main = MethodSpec.methodBuilder("main")
+
+    public void genServerClass( Set<Class> serviceClass,String desDir){
+
+        //Method method = serviceClass.getDeclaredMethods()[0];
+
+       MethodSpec.Builder mainBuilder = MethodSpec.methodBuilder("main")
                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
                .returns(void.class)
                .addParameter(String[].class, "args")
-               .addStatement("$T<$T,$T> serv = new $T($S,$S)"
-                       , ZMQServer.class,method.getParameterTypes()[0],getWrapper(method.getReturnType()),ZMQServer.class,
-                       serviceClass.getName(), serviceClass.getModule().getName())
-               .addStatement("$T executor = $T.newFixedThreadPool($L)", ExecutorService.class, Executors.class,2)
-               .addStatement("executor.submit(serv)")
-               .addException(ClassNotFoundException.class)
-               .addException(IllegalAccessException.class)
-               .addException(InstantiationException.class)
-               .build();
+               .addStatement("$T<$T<$T>> serverList = new $T<>()",List.class, Callable.class, Boolean.class, LinkedList.class)
+               .addStatement("$T executor = $T.newFixedThreadPool($L)", ExecutorService.class, Executors.class,serviceClass.size());
+        for(Class clazz:serviceClass){
+            Method method = clazz.getDeclaredMethods()[0];
+            mainBuilder.addStatement("serverList.add(new $T<$T,$T>($S,$S))"
+                    ,ZMQServer.class, method.getParameterTypes()[0], getWrapper(method.getReturnType()),
+                    clazz.getName(), clazz.getModule().getName());
+        }
+        mainBuilder.addStatement("executor.invokeAll(serverList)");
+        mainBuilder
+                .addException(ClassNotFoundException.class)
+                .addException(IllegalAccessException.class)
+                .addException(InstantiationException.class)
+                .addException(InterruptedException.class);
 
-       // ZMQServer<double[],Double> server = new ZMQServer<>("com.serviceB.ServiceImpl","servicea");
 
-        TypeSpec serverClass = TypeSpec.classBuilder("Server").addModifiers(Modifier.PUBLIC).addMethod(main).build();
-        JavaFile file = JavaFile.builder(serviceClass.getPackageName(),serverClass).build();
+
+        TypeSpec serverClass = TypeSpec.classBuilder("Server").addModifiers(Modifier.PUBLIC).addMethod(mainBuilder.build()).build();
+        JavaFile file = JavaFile.builder("com",serverClass).build();
+
         try {
             file.writeTo(Paths.get(desDir));
         } catch (IOException e) {

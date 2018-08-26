@@ -1,6 +1,5 @@
 package com.helper;
 
-
 import org.zeromq.ZContext;
 import org.zeromq.ZFrame;
 import org.zeromq.ZMQ;
@@ -21,7 +20,7 @@ public class ProxyClient<R> {
 
     private static ZContext ctx;
     private static Socket client;
-    private double avg = 0;
+    private Object defaultObj;
 
     ByteArrayOutputStream bos = new ByteArrayOutputStream();
     ObjectOutput out = null;
@@ -29,23 +28,19 @@ public class ProxyClient<R> {
 
 
     public ProxyClient(String serviceName){
-        System.out.println("Create Client");
+
 
         this.SERVER_ENDPOINT = "ipc://"+serviceName;
         this.ctx = new ZContext();
         this.client = ctx.createSocket(ZMQ.REQ);
         assert (client != null);
         //build connection
-        System.out.println(client.connect(SERVER_ENDPOINT));
-
-
+        client.connect(SERVER_ENDPOINT);
     }
-
 
     public R send(Object obj)  {
         if(!(obj instanceof Serializable))
             LOGGER.severe("Object " +obj.toString() + " cant be used for communication, it don't implements the <Serializable> interface");
-
 
         //Serialisierung  des Obj und senden der Msg
         try {
@@ -56,9 +51,9 @@ public class ProxyClient<R> {
 
             ZMsg reqMsg = new ZMsg();
             reqMsg.add(new ZFrame(byteArr));
-            R value = invoke(reqMsg);
-            System.out.println(value.toString());
-            return value;
+            Object value = invoke(reqMsg);
+            //LOGGER.info("Value is null: "+ (value==null));
+            return (R)value;
 
         }catch (IOException ex){
 
@@ -68,10 +63,10 @@ public class ProxyClient<R> {
     }
 
     public R invoke(ZMsg input) {
-        System.out.println("Client invoke");
+        //LOGGER.info("Client invoked");
         int retriesLeft = REQUEST_RETRIES;
         while (retriesLeft>0 && !Thread.currentThread().isInterrupted()){
-            System.out.println("Msg size:" + input.size());
+            //System.out.println("Msg size:" + input.size());
             input.send(client);
 
             int expect_reply = 1;
@@ -139,7 +134,7 @@ public class ProxyClient<R> {
 
                 } else if (--retriesLeft == 0) {
                     System.out.println("E: server seems to be offline, abandoning\n");
-                    this.avg = -1;
+
                     break;
                 } else {
                     System.out.println("W: no response from server, retrying\n");
@@ -158,6 +153,7 @@ public class ProxyClient<R> {
 
         return null;
     }
+
 
 
 

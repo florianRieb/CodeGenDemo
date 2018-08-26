@@ -1,13 +1,19 @@
 package com.gen;
 
+import com.fasterxml.jackson.core.JsonParser.Feature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.type.CollectionType;
+import com.fasterxml.jackson.databind.type.TypeFactory;
+
 import java.io.*;
 import java.lang.module.Configuration;
 import java.lang.module.ModuleDescriptor;
 import java.lang.module.ModuleFinder;
 import java.lang.module.ModuleReference;
 
+import java.net.URI;
 import java.nio.file.*;
-import java.security.Provider;
 import java.util.*;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -18,6 +24,8 @@ public class ProxyGenMain {
     static Map<String,Path> mlibSourcees = new HashMap<>();
 
     public static void main(String... args) throws IOException, ClassNotFoundException {
+        //############################################################
+        //Init Block
 
         /**
          * Benötigt als Eingabe 2 Strings
@@ -34,97 +42,164 @@ public class ProxyGenMain {
         TempGenerator temp = new TempGenerator();
 
         createWorkDirs(workDir);
-
-
-
+// 1.) Kompelieren des Projektes, Module werden in /mlib abgelegt
 
         // hier werden die Module des Projektes mit Maven gepackt  -> mvn package -f <args0> -DoutputDirectory=/mlib
         RuntimeExecutor runExec = new RuntimeExecutor();
         runExec.mvnCompile(args0);
 
-        //Kopiere Mod in mlib in der Projektstruktur
-        /**
-        File modSource = new File(System.getProperty("user.dir")+"/proxygen/src/main/resources/mods/");
-        File modDest = new File(System.getProperty("user.dir") +"/mlib/");
-        copyFolder(modSource,modDest);
-        */
 
-        Map<String,List<String>> modules = new HashMap<>();
-        Map<String,Map<String,Path>> environments = new HashMap<>();
+        //init Collections
+
+        Map<String,Map<String,Path>> environments =     new HashMap<>();
+        Set<String> allowedModules =                    new HashSet<>();
+        Map<String,String> dockerLocations =            new HashMap<>();
+        Set<String> clientModules =                     new HashSet<>();
+        Set<String> envModules =                        new HashSet<>();
+        List<Edge<String,String>> edges=                new LinkedList<>();
+        Map<String,Set<String>> ENV =                   new HashMap<>();
+        Set<String> modules4Isolation =                 new HashSet<>();
+        Set<String> serviceModules =                    new HashSet<>();
+
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.enable(SerializationFeature.INDENT_OUTPUT);
+        mapper.configure(Feature.AUTO_CLOSE_SOURCE, true);
+
+        TypeFactory typeFactory = mapper.getTypeFactory();
+        CollectionType collectionType = typeFactory.constructCollectionType(
+                List.class, Edge.class);
+
+
+
+
         ModuleFinder finder = ModuleFinder.of(Paths.get(args0+ "/mlib"));
-
         //Speicher Modulename und Path aller Module in mlib
         finder.findAll().stream().forEach((ModuleReference ref) -> {
             mlibSourcees.put(ref.descriptor().name(),Paths.get(ref.location().get().getPath()));
         });
 
-        if(finder.find(rootModule).isPresent()){
-            ModuleDescriptor desc = finder.find(rootModule).get().descriptor();
-            Map<String,Path> dependencies = readRequiredModules(desc);
-            // App selbst hinzufügen
-            dependencies.put(desc.name(), mlibSourcees.get(desc.name()));
-            if(dependencies.keySet().size()>0){
-                environments.put(desc.name(),dependencies);
-            }
-        }else  {
-            LOGGER.warning("Module "+ rootModule + " can't be found in /mlib Dir");
-        }
 
-
+//2.) Durchsuche die Service Module nach isomod.json
         //Suche nur nach Service-Modulen
         finder.findAll().stream().filter((ModuleReference ref) -> ref.descriptor().provides().size()>0)
                 .forEach((ModuleReference modRef) -> {
-                    List<String> lokalList = new LinkedList<>();
 
+                    serviceModules.add(modRef.descriptor().name());
+                    Optional<URI> ismodUri = null;
+                    try {
+                        ismodUri = modRef.open().find("isomod.json");
 
-                    // ToDo Hier können die Constrains aus dem Resource Ordner der Module ausgelesen werden!
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                    if(ismodUri.isPresent()){
+                        allowedModules.add(modRef.descriptor().name());
 
-                   // Suche die Klassen welche den Service implementieren
-                   modRef.descriptor().provides()
-                            .forEach((ModuleDescriptor.Provides p) -> lokalList.addAll(p.providers()));
-                   modules.put(modRef.descriptor().name(),lokalList);
+                      }
 
                 });
 
 
 
-
         //Laden der Module und generieren des Source Codes
+
         ModuleLayer bootLayer = ModuleLayer.boot();
-        Configuration config = bootLayer.configuration().resolve(finder,ModuleFinder.of(), modules.keySet());
+        Configuration config = bootLayer.configuration().resolve(finder,ModuleFinder.of(), allowedModules);
+
         ClassLoader scl = ClassLoader.getSystemClassLoader();
         ModuleLayer newLayer = bootLayer.defineModulesWithOneLoader(config,scl);
-        for(Map.Entry<String,List<String>> entry: modules.entrySet()){
-            Optional<Module> opModule = newLayer.findModule(entry.getKey());
+
+        String packageName;
+        String clientDir = workDir + File.separator + "java" + File.separator;
+        String serverDir = workDir + File.separator + "java" + File.separator;
+
+//3.) lese die Json Files aus und erstelle Edge Liste
+
+        newLayer.modules().stream().filter((Module m) -> allowedModules.contains(m.getDescriptor().name()))
+                .forEach((Module m) -> {
+                    try {
+                        //InputStream inputStream = m.getClassLoader().getResourceAsStream("isomod.json");
+
+                        InputStream inputStream = m.getResourceAsStream("isomod.json");
+                        List<Edge<String,String>> list = new ArrayList<>();
+
+                            list =  mapper.readValue(inputStream, collectionType );
+                            edges.addAll(list);
 
 
-            if(opModule.isPresent()){
-                Module m = opModule.get();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                });
+
+// 4.) Berechne min Anzahl an Env und die Zuordnung
+        allowedModules.add(rootModule);
+        Graph graph = new Graph(rootModule,edges,allowedModules);
+        try {
+            graph.validModuleNames();
+            Map<String,String> chromaticEnv=  graph.colourVertices();
+            //System.out.println(chromaticEnv);
+
+            ENV = swap(chromaticEnv);
+            System.out.println(ENV);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
 
 
-            for(String className:entry.getValue()){
-                Class c = m.getClassLoader().loadClass(className);
-                String destinationDir = workDir + File.separator+ "java" + File.separator + m.getName();
-                //Vosicht!! Wenn mehrere Services in einem Moduel vorhanden sind, muss das module-info file anschließend erstellt werden
-                // so würden für jede klasse die eien Service impl. ein eigenes erstellt werden.
-                genClientModule(m,c,destinationDir);
-                genServerModule(m,c,destinationDir);
+//5.1) Client Stub Module anlegen für alle Services die nicht ENVa zurgeordnet wurden
+        for(Map.Entry<String,Set<String>> entry: ENV.entrySet()){
+            //Für alle Services
+            if(!entry.getValue().contains(rootModule)){
+                Set<Class> serviceImplClasse = new HashSet<>();
+                Set<Module> mods4Generation = new HashSet<>();
+
+                for(String modulName:entry.getValue()){
+
+                    Optional<Module> opModule = newLayer.findModule(modulName);
+
+                    if(opModule.isPresent()) {
+                        Module module = opModule.get();
+                        mods4Generation.add(module);
+                        //lade Serviceimplementierung
+                        Optional<Class> clazz = loadProviderClass(module);
+                        if(clazz.isPresent()){
+                            String clientModName =  genClientModule(module,clazz.get(),clientDir);
+                            serviceImplClasse.add(clazz.get());
+
+                            //Sammlungen für die Erstellunge des Dockerfiles
+                            clientModules.add(clientModName);
+                            serviceModules.remove(modulName);
+                            serviceModules.add(clientModName);
+
+                        }
+
+                    }//isPresent
+
+
+                }//forModulesinSet
+//5.2) Generieren des Server Modules
+                if(serviceImplClasse.size()>0 && mods4Generation.size()>0){
+                    if(serviceImplClasse.size() != mods4Generation.size())
+                        LOGGER.warning("Es konnten nicht zu jedem Service-Modul eine Impl-Klasse gefunden werden");
+
+
+
+                 String isolatedModuleName = entry.getKey();
+                 genIsolatedModule(isolatedModuleName,mods4Generation,serviceImplClasse,serverDir+entry.getKey());
+                 envModules.add(isolatedModuleName);
+
 
                 }
-                //Für jedes generierte (server)Modul soll eine Sammlung aller Abhängigkeiten angelegt werden um eine lauffähige Anw. erstellen zu können.
 
-               Map<String,Path> dependencies = readRequiredModules(m.getDescriptor());
-                if(dependencies.keySet().size()>0){
-                    environments.put(m.getName(),dependencies);
-                }
 
-            }
-        }// end for (service modules)
+            }//if!=root
 
+        }//for ENV
 
         //Erstelle Compile-skript
-        temp.skript(args0,modules.keySet());
-
+        temp.skript(args0,clientModules,envModules);
 
         //Skript ausführen
 
@@ -132,67 +207,122 @@ public class ProxyGenMain {
             LOGGER.severe("Compilation failed");
 
 
-        //Wenn Skipt erfolgreich ausgeführt liegen die jars in dem Verzeichnis /mods
-        if((Paths.get(workDir+"mods" + File.separator + "server").iterator().hasNext())){
-            //künftig über Path statt mit Files arbeiten -> File gilt als deprecated da nicht  nio2 unterstützt
-           Path serverMods =  Paths.get(workDir+"mods" + File.separator + "server" + File.separator);
+        for(Map.Entry<String,Set<String>> entry: ENV.entrySet()){
+            Map<String,Path> dependencies = new HashMap<>();
+            environments.put(entry.getKey(),new HashMap<>());
+            //Benötigte Module zu der jeweiligen ENV zuordnen
+            for(String moduleName:entry.getValue()){
+                dependencies = readRequiredModules(finder.find(moduleName).get().descriptor());
 
-            Files.walk(serverMods).filter((Path p) -> p.toString().endsWith(".jar")).forEach((Path p) ->{
-                String moduleName = p.toFile().getName();
-                environments.get(moduleName.substring(0,moduleName.indexOf("_"))).put(p.toFile().getName().substring(0,p.toFile().getName().indexOf(".jar")),p);
-            } );
+            }
+
+            if(entry.getKey().equals("ENVa")){
+                dependencies.put(rootModule, mlibSourcees.get(rootModule));
+
+               List<String> services4App = serviceModules.stream().filter((String name)-> mlibSourcees.keySet().contains(name)).collect(Collectors.toList());
+               for(String name:services4App){
+                   dependencies.put(name,mlibSourcees.get(name));
+               }
+
+
+            }else{
+
+                Path sourcePath =  Paths.get(workDir +File.separator + "mods"+ File.separator + entry.getKey()+".jar");
+                if(!sourcePath.toFile().exists())
+                    System.out.println("Env File nicht gefunden !!!!!!");
+                dependencies.put(entry.getKey()+"_module",sourcePath);
+            }
+
+
+            if(dependencies.keySet().size()>0){
+                environments.get(entry.getKey()).putAll(dependencies);
+            }
+            else  {
+            LOGGER.warning("Module "+ rootModule + " can't be found in /mlib Dir");
         }
 
-        System.out.println(environments);
-        //ToDo erstelle ein Verzeichnis  je Env und kopiere alle Jars rein
-        //ToDo anschließend Dockerfile erstellen
 
-        createEnvDirs(workDir,environments,rootModule);
+        }
+
+
+        //erstelle ein Verzeichnis  je Env und kopiere alle Jars rein
+       createEnvDirs(workDir,environments);
+
+
+       dockerLocations = genDockerfiles(environments.keySet(),workDir+"environments",arg1,  serviceModules);
+
+
+       temp.createYAML(workDir,dockerLocations,rootModule);
+
+
 
     }//main()
 
-    public static void genClientModule(Module module, Class serviceImpl, String workDir) throws IOException {
-        String clientDir = workDir + File.separator + "_client";
+    public static String  genClientModule(Module module, Class serviceImpl, String workDir) throws IOException {
+        String clientDir = workDir +module.getName()+"_client";
 
         Generator generator = new Generator();
-        generator.genClientClass(module.getName(),serviceImpl,clientDir);
+         generator.genClientClass(module.getName(),serviceImpl,clientDir);
 
         TempGenerator moduleInfoGen = new TempGenerator();
-        moduleInfoGen.cloneModuleInfo(module.getDescriptor(),clientDir,"");
+        String modulName = moduleInfoGen.cloneModuleInfo(module.getDescriptor(),clientDir,"");
+        return modulName;
 
 
 
     }
+
     public static void genServerModule(Module module, Class serviceImpl, String workDir) throws IOException {
         String serverDir = workDir + File.separator  + "_server";
         String packageName = serviceImpl.getPackageName().replace(".",File.separator);
         String fileName = serviceImpl.getName().replace(".",File.separator);
         //Erstelle Verzeichnis
         Files.createDirectories(Paths.get(serverDir+ File.separator+packageName,File.separator));
+
         //Kopiere ServiceImpl Klasse
         Path serviceImplPath  =  Paths.get(System.getProperty("user.dir")+ File.separator+module.getName()+File.separator+"src/main/java/"+fileName+".java");
         Path serverModulePath = Paths.get(serverDir+File.separator+ fileName+".java");
         Files.copy(serviceImplPath,serverModulePath, StandardCopyOption.REPLACE_EXISTING);
 
         Generator generator = new Generator();
-        generator.genServerClass(serviceImpl,serverDir);
+        //generator.genServerClass(serviceImpl,serverDir);
         //Erstelle module-info mit qualified export zu proxygen - So hat ZMQServer Zugriff auf die ServiceImpl.class
         TempGenerator moduleInfoGen = new TempGenerator();
         moduleInfoGen.cloneModuleInfo(module.getDescriptor(),serverDir,serviceImpl.getPackageName());
 
     }
 
+    public static void genIsolatedModule(String moduleName, Set<Module> serviceModules, Set<Class> serviceImpl, String workDir) throws IOException {
+
+        //Kopiere Service Impl. Klassen
+        for(Class c:serviceImpl){
+            String fileName = c.getName().replace(".",File.separator);
+            Path serviceImplPath  =  Paths.get(System.getProperty("user.dir")+ File.separator+c.getModule().getName()+File.separator+"src/main/java/"+fileName+".java");
+            Path envPath = Paths.get(workDir+File.separator+ fileName+".java");
+            //Files.copy(serviceImplPath,envPath , StandardCopyOption.REPLACE_EXISTING);
+            copyFolder(serviceImplPath.toFile(),envPath.toFile());
+
+        }
+
+        //Erstelle Server Klasse
+        Generator generator = new Generator();
+        generator.genServerClass(serviceImpl,workDir);
+
+        TempGenerator templator = new TempGenerator();
+        templator.createServerModuleInfo(moduleName,serviceModules,workDir,serviceImpl);
+
+
+    }
 
     private static void createWorkDirs(String workDir){
 
-        String[] workdirs = new String[7];
+        String[] workdirs = new String[6];
         workdirs[0] = workDir;
         workdirs[1] = workDir+"java";
         workdirs[2] = workDir+"classes";
         workdirs[3] = workDir+"mods";
         workdirs[4] =  workDir+"mods"+File.separator+"client";
-        workdirs[5] =  workDir+"mods"+File.separator+"server";
-        workdirs[6] = workDir+"environments";
+        workdirs[5] = workDir+"environments";
         for(int i = 0; i<workdirs.length ;i++){
             if(!new File(workdirs[i]).exists()){
                 new File(workdirs[i]).mkdir();
@@ -215,7 +345,7 @@ public class ProxyGenMain {
             if (!destinationFolder.exists())
             {
                 destinationFolder.mkdir();
-                System.out.println("Directory created :: " + destinationFolder);
+                //System.out.println("Directory created :: " + destinationFolder);
             }
 
             //Get all files from source directory
@@ -235,12 +365,12 @@ public class ProxyGenMain {
         {
             if(!destinationFolder.exists()){
                 destinationFolder.mkdirs();
-                System.out.println("Directory created :: " + destinationFolder);
+                //System.out.println("Directory created :: " + destinationFolder);
             }
 
             //Copy the file content from one place to another
             Files.copy(sourceFolder.toPath(), destinationFolder.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            System.out.println("File copied :: " + destinationFolder);
+            //System.out.println("File copied :: " + destinationFolder);
         }
     }
 
@@ -266,7 +396,7 @@ public class ProxyGenMain {
 
     }
 
-    private static void createEnvDirs(String workDir,Map<String,Map<String,Path>> environments, String rootModule ){
+    private static void createEnvDirs(String workDir,Map<String,Map<String,Path>> environments ){
         Map<String,Path> tempEnv;
         File modSource = new File(System.getProperty("user.dir")+"/proxygen/src/main/resources/mods/");
         //workdir = projectDir + /generatedFiles;
@@ -274,17 +404,17 @@ public class ProxyGenMain {
         //rootModule is the main application
         Map<String,Map<String,Path>> envis = environments;
         //env-0 should always include the main application
+        String baseEnv = "ENVa";
 
-        String envX = "env";
-        int i = 0;
 
-        tempEnv = envis.remove(rootModule);
+        tempEnv = envis.get(baseEnv);
+
         for(Map.Entry<String,Path> entry: tempEnv.entrySet()){
             //generatedFiles/environments/env0/<...>.jar
                 //dependencies
-            Path destPath =  Paths.get(envDir + envX + i + File.separator + entry.getKey()+".jar");
+            Path destPath =  Paths.get(envDir +baseEnv + File.separator + entry.getKey()+".jar");
                 //helper
-            Path desPath2 = Paths.get(envDir + envX + i);
+            Path desPath2 = Paths.get(envDir + baseEnv );
                 //clients
             Path clientsource = Paths.get(workDir + File.separator + "mods" + File.separator + "client");
             try {
@@ -296,10 +426,12 @@ public class ProxyGenMain {
             }
         }
         for(String key: envis.keySet()){
-            i++;
+            if(!key.equals(baseEnv)){
+
+
               for(Map.Entry<String,Path> entry: envis.get(key).entrySet()){
-                  Path destPath =  Paths.get(envDir + envX + i + File.separator + entry.getKey()+".jar");
-                  Path desPath2 = Paths.get(envDir + envX + i);
+                  Path destPath =  Paths.get(envDir + key +File.separator + entry.getKey()+".jar");
+                  Path desPath2 = Paths.get(envDir + key);
                   try {
                       copyFolder(entry.getValue().toFile(),destPath.toFile());
                       copyFolder(modSource,desPath2.toFile());
@@ -307,9 +439,88 @@ public class ProxyGenMain {
                       e.printStackTrace();
                   }
               }
+            }
         }
 
 
+
+
+    }
+
+    private static Map<String,String>  genDockerfiles (Set<String> moduleName, String envDir, String rootModuleArgs, Set<String> services){
+
+        //Set<String> testSet = new HashSet<>(Set.of("app","service.a_server","service.b","servicec"));
+
+
+        TempGenerator templateGen = new TempGenerator();
+        templateGen.cfg.setInterpolationSyntax(templateGen.cfg.SQUARE_BRACKET_INTERPOLATION_SYNTAX);
+        Map<String,String> fileLocations = new HashMap<>();
+
+
+            try {
+                Files.list(Paths.get(envDir)).forEach((Path path) -> {
+                    //Für jedes Dir envX
+                    ModuleFinder finder = ModuleFinder.of(path);
+                   // finder.findAll().stream().filter((ModuleReference ref) -> moduleName.contains(ref.descriptor().name())).forEach((ModuleReference ref) -> {
+
+                        try{
+                            if(path.endsWith("ENVa")){
+                                //App
+                                String appName = rootModuleArgs.substring(0,rootModuleArgs.indexOf("/"));
+                                String filePath =  templateGen.dockerMainAppFile(path.toString(),rootModuleArgs, services);
+                                fileLocations.put(appName,filePath);
+
+                            }else{
+
+                                String filePath = templateGen.dockerServerFile(path.toString(),path.toString(),path.toFile().getName());
+                                fileLocations.put(path.toFile().getName(),filePath);
+
+                            }
+
+
+                        }catch (IOException e) {
+                            e.printStackTrace();
+                        }
+
+
+                   // });
+                });
+            } catch (IOException e1) {
+                e1.printStackTrace();
+            }
+
+
+            return  fileLocations;
+
+        }
+
+
+    private static Optional<Class> loadProviderClass(Module module){
+        // Only single class is possible
+        Optional<Class> clazz;
+        String className = module.getDescriptor().provides().stream().findFirst().get().providers().stream().findFirst().get().toString();
+        ClassLoader cl = module.getClassLoader();
+        try {
+
+           clazz = Optional.ofNullable(cl.loadClass(className));
+        } catch (ClassNotFoundException e) {
+            e.printStackTrace();
+            clazz = Optional.ofNullable(null);
+        }
+        return clazz;
+
+    }
+    public static Map swap(Map<String, String> map){
+        Map<String,Set<String>> returnMap = new HashMap<>();
+
+        for(Map.Entry<String,String> entry:map.entrySet())
+            if(returnMap.keySet().contains(entry.getValue())){
+                returnMap.get(entry.getValue()).add(entry.getKey());
+            }else{
+                returnMap.put(entry.getValue(),new HashSet<String>(Set.of(entry.getKey())));
+            }
+
+        return  returnMap;
 
 
     }

@@ -9,11 +9,12 @@ import java.io.*;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Iterator;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 
-public class ZMQServer<I,O>  implements Runnable{
+public class ZMQServer<I,O>  implements Callable<Boolean> {
 
     ZMQ.Context ctx;
     ZMQ.Socket server;
@@ -36,11 +37,11 @@ public class ZMQServer<I,O>  implements Runnable{
     }
 
     @Override
-    public void run(){
+    public Boolean call(){
         this.ctx = ZMQ.context(1);
         this.server = ctx.socket(ZMQ.REP);
         this.server.bind("ipc://"+serviceName);
-        System.out.println("start runnung");
+        System.out.println("start runnung " + serviceName + " server");
 
         while(!Thread.currentThread().isInterrupted()){
 
@@ -48,14 +49,12 @@ public class ZMQServer<I,O>  implements Runnable{
             ZMsg recvMsg = ZMsg.recvMsg(this.server);
             System.out.println("Msg size:" + recvMsg.size());
             if(recvMsg.size()>=1){
-                System.out.println("Msg size:" + recvMsg.size());
 
                 //lese Nachricht aus
                 Iterator<ZFrame> frames = recvMsg.iterator();
                 while(frames.hasNext()){
                     ZFrame frame = frames.next();
-                    //Größe des ByteArrays?
-                    System.out.println("get ByteArry size: " + frame.getData().length);
+
                     bis =  new ByteArrayInputStream(frame.getData());
                     try {
                         in = new ObjectInputStream(bis);
@@ -81,9 +80,8 @@ public class ZMQServer<I,O>  implements Runnable{
 
             }
 
-            System.out.println("replying");
             //Send Server reply
-            Double d = 444.4;
+
             byte[] returnByte = null;
             try {
                 ByteArrayOutputStream bos = new ByteArrayOutputStream();
@@ -108,17 +106,17 @@ public class ZMQServer<I,O>  implements Runnable{
         }
 
 
-
+        return true;
     }
 
-
+    /**
     public static void main(String... args){
 
         ExecutorService executor = Executors.newFixedThreadPool(2);
         //executor.submit(new ZMQServer<Double[],Double>());
 
 
-    }
+    }*/
 
 
 }

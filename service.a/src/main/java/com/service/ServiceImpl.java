@@ -12,12 +12,13 @@ public class ServiceImpl implements CalcService  {
 
         @Override
         public double calc(double[] numbers) throws Exception{
-            LOGGER.info("ServiceA Got numbers and calc sum");
+
             double sum = 0;
             for(double n:numbers){
                 sum+=n;
-            }
+            } LOGGER.info("ServiceA Got numbers and calc sum: " + sum);
             return sum;
         }
+
 
 }

@@ -8,25 +8,30 @@ import java.lang.module.Configuration;
 import java.lang.module.ModuleDescriptor;
 import java.lang.module.ModuleFinder;
 import java.nio.file.Paths;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class TeschdMain {
 
     public static void main(String... args) throws Exception {
         String args0 = System.getProperty("user.dir");
 
-        ModuleFinder finder = ModuleFinder.of(Paths.get(args0+ "/mlib"),Paths.get(args0 + "/generatedFiles/mods"));
+        List<Callable<Boolean>> serverList = new LinkedList<>();
+        //ZMQServer<double[],Double> serv = new ZMQServer<>("test.ServiceImpl","service.b");
+        serverList.add(new ZMQServer<double[],Double>("test.ServiceImpl","service.b"));
+        ZMQServer<double[],Double> serv2 = new ZMQServer<>("test.ServiceZwei","servicezwei");
+        //serverList.add(serv);
+        serverList.add(serv2);
 
-        //Laden der Module und generieren des Source Codes
-        ModuleLayer bootLayer = ModuleLayer.boot();
-        Configuration config = bootLayer.configuration().resolve(finder, ModuleFinder.of(), Set.of("app"));
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        executor.invokeAll(serverList);
 
-        finder.find("app").get().descriptor().requires().stream()
-                .filter((ModuleDescriptor.Requires req)-> !req.name().startsWith("java."))
-                .forEach((ModuleDescriptor.Requires req) -> System.out.println(finder.find(req.name()).get().location().get().getPath()));
 
-        ClassLoader scl = ClassLoader.getSystemClassLoader();
-        ModuleLayer newLayer = bootLayer.defineModulesWithOneLoader(config,scl);
 
     }
+
 }
