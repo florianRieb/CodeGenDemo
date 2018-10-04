@@ -37,9 +37,13 @@ public class Main {
         while (!Thread.currentThread().isInterrupted()){
             for(CalcService service:services){
                 try {
+                    long timestamp1 = System.nanoTime();
                     Optional<Double> d =  Optional.ofNullable(service.calc(numberArray));
+                    long timestamp2 = System.nanoTime();
                     if(d.isPresent()){
                         System.out.println("result of calcService : " + d.get());
+                        System.out.print("recived after " + (timestamp2 - timestamp1) + " nanoseconds" );
+                        System.out.println("");
                     }else{
                         System.out.println("Service not reachable");
                     }

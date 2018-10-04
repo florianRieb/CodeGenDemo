@@ -1,6 +1,6 @@
 package api;
 
 public interface CalcService {
-    double calc(double[] n) throws Exception;
+    Double calc(double[] n) throws Exception;
 
 }

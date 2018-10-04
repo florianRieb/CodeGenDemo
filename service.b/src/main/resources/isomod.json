@@ -1,8 +1,0 @@
-[ {
-  "baseModule" : "service.b",
-  "module2Isolate" : "app"
-} ,
-{
-"baseModule" : "service.b",
-"module2Isolate" : "service.a"
-} ]

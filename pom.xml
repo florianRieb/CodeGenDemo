@@ -12,9 +12,8 @@
         <module>service.a</module>
         <module>service.b</module>
         <module>app</module>
-        <module>proxygen</module>
-        <module>libmodule</module>
         <module>servicec</module>
+        <module>Service.D</module>
 
     </modules>
     <packaging>pom</packaging>

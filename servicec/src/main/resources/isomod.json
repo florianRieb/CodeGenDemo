@@ -1,9 +1,0 @@
-[ {
-  "baseModule" : "servicec",
-  "module2Isolate" : "service.b"
-},
-  {
-    "baseModule" : "servicec",
-    "module2Isolate" : "app"
-  }
-]

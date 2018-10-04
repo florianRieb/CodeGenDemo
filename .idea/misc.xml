@@ -11,7 +11,9 @@
       <set>
         <option value="$PROJECT_DIR$/Agent/pom.xml" />
         <option value="$PROJECT_DIR$/generator/pom.xml" />
+        <option value="$PROJECT_DIR$/libmodule/pom.xml" />
         <option value="$PROJECT_DIR$/netty/pom.xml" />
+        <option value="$PROJECT_DIR$/proxygen/pom.xml" />
       </set>
     </option>
   </component>

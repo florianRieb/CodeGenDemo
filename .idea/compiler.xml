@@ -7,18 +7,21 @@
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
         <module name="app" />
-        <module name="libmodule" />
-        <module name="proxygen" />
         <module name="service.a" />
         <module name="service.api" />
         <module name="service.b" />
+        <module name="service.d" />
+        <module name="Service.D" />
         <module name="servicec" />
+        <module name="serviceC" />
       </profile>
     </annotationProcessing>
     <bytecodeTargetLevel>
       <module name="Agent" target="10" />
       <module name="generator" target="10" />
+      <module name="libmodule" target="10" />
       <module name="netty" target="10" />
+      <module name="proxygen" target="10" />
     </bytecodeTargetLevel>
   </component>
   <component name="JavacSettings">
